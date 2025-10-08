@@ -240,14 +240,114 @@ for i, (sarC, errC) in enumerate(zip([SAR_autoclave, SAR_balon, SAR_NF],
 
 a.set_title('Muestras C - 300 kHz - 57 kA/m',loc='left')
 for ax in (a):
-    ax.set_xticks([1, 2, 3, 4])
-    # ax.set_xlabel('Categorías')
+    ax.set_xlabel('Categorías')
     ax.set_ylabel('SAR (W/g)')
     ax.legend(ncol=2, loc='upper right')
     ax.grid(True, axis='y', linestyle='--')
-a.set_xticklabels(categories)
+# a.set_xticklabels(categories)
+#ax.set_xticks([1])
 #plt.savefig('comparativa_SAR_C_F.png', dpi=300)
 plt.show()
+#%%
+#%% SAR y tau - Versión mejorada para arrays completos
+
+res_autoclave = glob('250828_autoclave/**/*resultados*', recursive=True)
+res_balon = glob('250828_balon/**/*resultados*', recursive=True)
+res_NF = glob('250910_NF/**/*resultados*', recursive=True)
+res_C = [res_autoclave, res_balon, res_NF]
+
+for r in res_C:
+    r.sort()
+
+# Listas para almacenar los arrays completos de SAR
+SAR_arrays_autoclave, SAR_arrays_balon, SAR_arrays_NF = [], [], []
+
+# Extraer todos los arrays de SAR para cada categoría
+for C in res_autoclave:
+    meta, _, _, _, _, _, _, _, _, _, _, _, SAR, tau, _ = lector_resultados(C)
+    SAR_arrays_autoclave.append(SAR)
+
+for C in res_balon:
+    meta, _, _, _, _, _, _, _, _, _, _, _, SAR, tau, _ = lector_resultados(C)
+    SAR_arrays_balon.append(SAR)
+
+for C in res_NF:
+    meta, _, _, _, _, _, _, _, _, _, _, _, SAR, tau, _ = lector_resultados(C)
+    SAR_arrays_NF.append(SAR)
+
+#%% Gráfico de SAR vs índice (3 filas, 1 columna)
+fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(8, 10), constrained_layout=True,sharex=True)
+categorias = ['Autoclave', 'Balón', 'NF']
+colores = ['tab:blue', 'tab:red', 'tab:green']
+
+# Función para graficar cada categoría
+def graficar_sar_vs_indice(ax, sar_arrays, categoria, color, idx):
+    for i, sar_array in enumerate(sar_arrays):
+        indices = np.arange(len(sar_array))  # Índices del array
+        ax.plot(indices, sar_array, 'o-', alpha=0.7, linewidth=1, markersize=4,
+                label=f'{categoria} {i+1}', color=color)
+    
+    ax.set_title(f'{categoria} - SAR vs Índice', loc='left')
+    ax.set_xlabel('Índice')
+    ax.set_ylabel('SAR (W/g)')
+    ax.legend(loc='upper right', fontsize=9)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Ajustar límites del eje Y para mejor visualización
+    # if sar_arrays:  # Si hay datos
+    #     all_values = np.concatenate(sar_arrays)
+    #     y_min = np.min(all_values) * 0.98
+    #     y_max = np.max(all_values) * 1.02
+    #     ax.set_ylim(y_min, y_max)
+
+
+# Graficar cada categoría en su propio subplot
+graficar_sar_vs_indice(axes[0], SAR_arrays_autoclave, 'Autoclave', 'tab:blue', 0)
+graficar_sar_vs_indice(axes[1], SAR_arrays_balon, 'Balón', 'tab:red', 1)
+graficar_sar_vs_indice(axes[2], SAR_arrays_NF, 'NF', 'tab:green', 2)
+
+plt.suptitle('Comparativa SAR vs Índice - Muestras C - 300 kHz - 57 kA/m', fontsize=14)
+plt.savefig('comparativa_SAR_Eli.png', dpi=300)
+plt.show()
+
+#%% Opcional: Gráfico combinado en una sola figura para comparación directa
+fig2, ax2 = plt.subplots(figsize=(12, 6), constrained_layout=True,share)
+
+# Graficar todos juntos para comparación
+for i, (sar_arrays, categoria, color) in enumerate(zip(
+    [SAR_arrays_autoclave, SAR_arrays_balon, SAR_arrays_NF], 
+    categorias, 
+    colores
+)):
+    for j, sar_array in enumerate(sar_arrays):
+        indices = np.arange(len(sar_array))
+        # Desplazar ligeramente los puntos para evitar superposición
+        x_offset = i * 0.1
+        ax2.plot(indices + x_offset, sar_array, 'o', alpha=0.6, markersize=3,
+                label=f'{categoria} {j+1}' if j == 0 else "", color=color)
+
+ax2.set_title('Comparativa SAR vs Índice - Todas las muestras', loc='left')
+ax2.set_xlabel('Índice')
+ax2.set_ylabel('SAR (W/g)')
+ax2.legend(ncol=3, loc='upper right')
+ax2.grid(True, linestyle='--', alpha=0.7)
+
+plt.show()
+
+#%% Estadísticas básicas
+print("Estadísticas de SAR:")
+print("=" * 50)
+for categoria, sar_arrays in zip(categorias, [SAR_arrays_autoclave, SAR_arrays_balon, SAR_arrays_NF]):
+    if sar_arrays:
+        all_values = np.concatenate(sar_arrays)
+        print(f"{categoria}:")
+        print(f"  Número de muestras: {len(sar_arrays)}")
+        print(f"  Total de puntos: {len(all_values)}")
+        print(f"  SAR promedio: {np.mean(all_values):.2f} ± {np.std(all_values):.2f} W/g")
+        print(f"  Rango: [{np.min(all_values):.2f}, {np.max(all_values):.2f}] W/g")
+        print()
+
+
 #%% Tau
 fig2, (a, b) = plt.subplots(nrows=2, figsize=(7, 5), constrained_layout=True)
 
