@@ -107,41 +107,18 @@ def ajusta_seno(t,v_r):
     return offset, amplitud , frecuencia, fase
 
 '''Funcion: resta_inter() '''
-def resta_inter(t, v, v_r, fase, frec, offset, t_f, v_f, v_r_f, fase_f, frec_f, graf):    
+def resta_inter(t,v,v_r,fase,frec,offset,t_f,v_f,v_r_f,fase_f,frec_f,graf):    
     '''
     Funcion para la interpolacion y resta. 
     Grafica si parametro graf = graficos[1] = 1
     Desplazamiento temporal para poner en fase las referencias, y
     resta de valores medios de referencias.
-    
-    Retorna:
-    Resta: señal de muestra menos fondo interpolado
-    t_1: vector de tiempos coherente
-    v_r_1: referencia de muestra desplazada y sin offset
-    fondo_interp: señal de fondo interpolada al tiempo de la muestra
-    fondo_interp_ref: referencia de fondo interpolada al tiempo de la muestra
-    figura: objeto de figura o string indicando figura off
     '''    
-    # Convertir a arrays numpy si son Series de pandas
-    if hasattr(t_f, 'values'):
-        t_f = t_f.values
-    if hasattr(v_f, 'values'):
-        v_f = v_f.values
-    if hasattr(v_r_f, 'values'):
-        v_r_f = v_r_f.values
-    if hasattr(t, 'values'):
-        t = t.values
-    if hasattr(v, 'values'):
-        v = v.values
-    if hasattr(v_r, 'values'):
-        v_r = v_r.values
-    
     '''
     Calculo el modulo 2 pi de las fases y calcula el tiempo de fase 0 
     '''
-    t_fase = np.mod(fase, 2*np.pi) / (2*np.pi*frec)
-    t_fase_f = np.mod(fase_f, 2*np.pi) / (2*np.pi*frec_f)
-    
+    t_fase = np.mod(fase,2*np.pi)/(2*np.pi*frec)
+    t_fase_f = np.mod(fase_f,2*np.pi)/(2*np.pi*frec_f)
     '''
     Desplaza en tiempo para que haya coincidencia de fase e/ referencias.
     La amplitud debería ser positiva siempre por el valor inicial 
@@ -149,115 +126,79 @@ def resta_inter(t, v, v_r, fase, frec, offset, t_f, v_f, v_r_f, fase_f, frec_f, 
     '''
     t_1 = t - t_fase 
     t_f_aux = t_f - t_fase_f     
-    
     '''
     Correccion por posible diferencia de frecuencias dilatando el 
     tiempo del fondo 
     '''
-    t_f_mod = t_f_aux * frec_f / frec 
-    
+    t_f_mod = t_f_aux*frec_f/frec 
     '''
     Resta el offset de la referencia
     '''
     v_r_1 = v_r - offset
-    
     '''
     Resta medida y fondo interpolando para que corresponda mejor el
     tiempo. No trabaja más con la medidas individuales, sólo con la
     resta. Se toma la precaución para los casos de trigger distinto
     entre fondo y medida. Comienza en fase 0 o sea t=0.
     '''
-    t_min = 0
-    t_max = t_f_mod[-1]  # Ahora es numpy array, no Series
-    
+    t_min=0
+    t_max=t_f_mod.iloc[-1]
     '''
     Recorta el tiempo a mirar
     '''
-    mask = (t_1 >= t_min) & (t_1 <= t_max)
-    t_aux = t_1[mask]
-    
+    t_aux = t_1[np.nonzero((t_1>=t_min) & (t_1<=t_max))]
     ''' 
-    Interpola el fondo y la referencia de fondo al tiempo de la muestra
+    Interpola el fondo a ese tiempo
     '''
-    # Interpolación de la señal de fondo
-    interpolacion_aux = np.interp(t_aux, t_f_mod, v_f)
-    fondo_interp = np.empty_like(v)
-    
-    # Interpolación de la referencia de fondo
-    fondo_interp_ref_aux = np.interp(t_aux, t_f_mod, v_r_f)
-    fondo_interp_ref = np.empty_like(v_r)
-    
+    interpolacion_aux = np.interp(t_aux,t_f_mod,v_f)
+    interpolacion = np.empty_like(v)   
     '''
-    Reconstruye los vectores completos con la misma longitud original
-    Para puntos fuera del rango de interpolación, se usa extrapolación o NaN
+    Cambia índice viejo por índice nuevo en la base original
     '''
-    for w in range(len(t_1)):
-        if t_1[w] >= t_min and t_1[w] <= t_max:
-            # Encuentra el índice más cercano en t_aux
-            index_min_m = np.argmin(np.abs(t_aux - t_1[w]))
-            fondo_interp[w] = interpolacion_aux[index_min_m]
-            fondo_interp_ref[w] = fondo_interp_ref_aux[index_min_m]
-        else:
-            # Para puntos fuera del rango, usa extrapolación o NaN
-            if t_1[w] < t_min:
-                fondo_interp[w] = v_f[0]  # Primer elemento
-                fondo_interp_ref[w] = v_r_f[0]  # Primer elemento
-            else:
-                fondo_interp[w] = v_f[-1]  # Último elemento (ahora funciona con arrays numpy)
-                fondo_interp_ref[w] = v_r_f[-1]  # Último elemento
-    
+    for w in range(0,len(t_1),1):  
+        #obtengo el indice donde esta el minimo de la resta: 
+        index_min_m = np.argmin(abs(t_aux - t_1[w]))
+        #defino c/ elemento de interpolacion: 
+        interpolacion[w] = interpolacion_aux[index_min_m]
     '''
     Defino la resta entre la señal (m o c) y la interpolacion de la señal
-    de fondo
-    '''
-    Resta = v - fondo_interp
-    
+    de fondo'''
+    Resta = v - interpolacion
     '''
     Comparacion de las referencias de muestra y fondo desplazadas en
     tiempo y offset
     '''
     
-    if graf != 0:
+    if graf!=0:
         '''Rutina de ploteo para resta_inter'''
-        def ploteo(t_f_mod, v_r_f, t_1, v_r_1, fondo_interp_ref):
-            fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), constrained_layout=True)
+        def ploteo(t_f_mod,v_r_f,t_1,v_r_1):
+            fig = plt.figure(figsize=(10,8),constrained_layout=True)
+            ax = fig.add_subplot(2,1,1)
+            plt.plot(t_1,v_r_1,lw=1,label=str(graf).capitalize())
+            plt.plot(t_f_mod,v_r_f,lw=1,label='Fondo')
+            plt.legend(loc='best')
+            plt.grid()
+            plt.xlabel('t (s)')
+            plt.ylabel('Referencia (V)')
+            plt.title('Referencias desplazadas y restados sus offsets',loc='left')
             
-            # Subplot 1: Referencias
-            ax1.plot(t_1, v_r_1, lw=1, label=str(graf).capitalize() + ' - Referencia')
-            ax1.plot(t_1, fondo_interp_ref, lw=1, label='Fondo - Referencia interpolada')
-            ax1.legend(loc='best')
-            ax1.grid()
-            ax1.set_xlabel('t (s)')
-            ax1.set_ylabel('Referencia (V)')
-            ax1.set_title('Referencias desplazadas y restados sus offsets', loc='left')
-            
-            # Subplot 2: Señales originales
-            ax2.plot(t_f_mod, v_f, lw=1, label='Fondo original')
-            ax2.plot(t_1, v, lw=1, label=str(graf).capitalize() + ' original')
-            ax2.plot(t_1, fondo_interp, lw=1, label='Fondo interpolado')
-            ax2.legend(loc='best')
-            ax2.grid()
-            ax2.set_xlabel('t (s)')
-            ax2.set_ylabel('Señal (V)')
-            ax2.set_title('Señales originales e interpoladas', loc='left')
-            
-            # Subplot 3: Resta resultante
-            ax3.plot(t_1, Resta, lw=1, label='Resta (' + str(graf).capitalize() + ' - Fondo)', color='red')
-            ax3.legend(loc='best')
-            ax3.grid()
-            ax3.set_xlabel('t (s)')
-            ax3.set_ylabel('Señal resultante (V)')
-            ax3.set_title('Señal resultante de la resta', loc='left')
-            
-            fig.suptitle('Comparación y resta de señales - ' + str(graf).capitalize(), fontsize=16)
+            ax = fig.add_subplot(2,1,2)
+            plt.plot(t_f_mod,v_f,lw=1,label='Fondo')
+            plt.plot(t_1,v,lw=1,label=str(graf).capitalize())
+            plt.plot(t_1,interpolacion,lw=1,label='Interpolacion del fondo al tiempo de la '+str(graf))
+            plt.legend(loc='best')
+            plt.grid()
+            plt.xlabel('t (s)')
+            plt.ylabel('Señal (V)')
+            plt.title(str(graf).capitalize()+' y fondo',loc='left')
+            #plt.savefig('Comparacion_de_medidas_'+str(graf)+'.png',dpi=300)
+            fig.suptitle('Comparacion de señales',fontsize=20)
             return fig
-        
-        figura = ploteo(t_f_mod, v_r_f, t_1, v_r_1, fondo_interp_ref)
+        figura = ploteo(t_f_mod,v_r_f,t_1,v_r_1)
     else:
         figura = 'Figura off'
 
-    return Resta, t_1, v_r_1, fondo_interp, fondo_interp_ref, figura
-
+    return Resta , t_1 , v_r_1 , figura 
 
 '''Funcion: encuentra_ruido().Es subrutina del filtro Actis, en filtrando_ruido()'''
 def encuentra_ruido(t,v,ancho,entorno):
@@ -459,25 +400,31 @@ def filtrando_ruido(t,v_r,v,filtrar,graf):
     return t_2 , v_r_2 , v_2 ,figura_2 
 
 '''Funcion: recorte()'''
-def recorte(t,v_r,v,frecuencia,v_fondo_interp,v_fondo_interp_r,graf):
+def recorte(t,v_r,v,frecuencia,graf):
     '''
     Recorta un numero entero de periodos o ciclos,arrancando en fase 0 (campo max o campo min segun polaridad)
     Grafico: señal de muestra/calibracion, s/ fondo, s/ valor medio y recortadas a un numero entero de ciclos.
-    Hace lo mismo con el fondo interpolado creado en resta_inter().
     '''
     #Numero de ciclos
     N_ciclos =  int(np.floor(t[-1]*frecuencia)) 
     
     #Indices ciclo
+    indices_recorte = np.nonzero(np.logical_and(t>=0,t<N_ciclos/frecuencia))  
     
-    indices_recorte = np.nonzero(np.logical_and(t>=0, t<N_ciclos/frecuencia))
-
+    #Si quisiera recortar ciclos a ambos lados
+    # largo = indices_ciclo[-1][0]
+    #if np.mod(largo,N_ciclos) == 0:
+    # largo = largo - np.mod(largo,N_ciclos)
+    #elif np.mod(largo,N_ciclos) <= 0.5:
+        #largo = largo - np.mod(largo,N_ciclos)
+    #else:
+    # largo = largo + N_ciclos - np.mod(largo,N_ciclos)
+    '''
+    Recorto los vectores
+    '''
     t_2 = t[indices_recorte]
-    v_2 = v[indices_recorte]                    # Señal principal
-    v_r_2 = v_r[indices_recorte]                # Referencia principal  
-    v_fondo_interp_2 = v_fondo_interp[indices_recorte]      # Fondo interpolado
-    v_fondo_interp_r_2 = v_fondo_interp_r[indices_recorte]  # Referencia fondo interpolado
-    
+    v_2 = v[indices_recorte]
+    v_r_2 = v_r[indices_recorte]
     if graf !=0:
         '''
         Señal de muestra/calibracion, s/ fondo, s/ valor medio y 
@@ -506,41 +453,34 @@ def recorte(t,v_r,v,frecuencia,v_fondo_interp,v_fondo_interp_r,graf):
     else:
         figura ='Figura off'
 
-    return t_2 , v_r_2 , v_2 ,v_fondo_interp_2, v_fondo_interp_r_2,N_ciclos, figura
+    return t_2 , v_r_2 , v_2 , N_ciclos, figura
 
 '''Funcion: promediado_ciclos()'''
-def promediado_ciclos(t,v_r,v,frecuencia,N_ciclos,v_fondo_interp,v_fondo_interp_r):
+def promediado_ciclos(t,v_r,v,frecuencia,N_ciclos):
     '''
     '''
     t_f = t[t<t[0]+1/frecuencia]
     v_r_f = np.zeros_like(t_f)
     v_f = np.zeros_like(t_f)
-    v_fondo_interp_aux = np.zeros_like(t_f)
-    v_fondo_interp_r_aux = np.zeros_like(t_f)
     for indx in range(N_ciclos):
         if t_f[-1] + indx/frecuencia < t[-1]: 
             interpolador_r = sc.interpolate.interp1d(t,v_r,kind='linear')
             interpolador = sc.interpolate.interp1d(t,v,kind='linear')
-            interpolador_fondo = sc.interpolate.interp1d(t,v_fondo_interp,kind='linear')
-            interpolador_fondo_r = sc.interpolate.interp1d(t,v_fondo_interp_r,kind='linear')
             v_r_f = v_r_f + interpolador_r(t_f + indx/frecuencia)/N_ciclos
             v_f = v_f + interpolador(t_f + indx/frecuencia)/N_ciclos
-            v_fondo_interp_aux = v_fondo_interp_aux + interpolador_fondo(t_f + indx/frecuencia)/N_ciclos
-            v_fondo_interp_r_aux = v_fondo_interp_r_aux + interpolador_fondo_r(t_f + indx/frecuencia)/N_ciclos
+
         else: #True en la ultima iteracion
             interpolador_r_2 = sc.interpolate.interp1d(t,v_r,kind='slinear')
             interpolador_2 = sc.interpolate.interp1d(t,v,kind='slinear')
-            interpolador_fondo_2 = sc.interpolate.interp1d(t,v_fondo_interp,kind='slinear')
             v_r_f = v_r_f + interpolador_r_2(t_f + (indx-1)/frecuencia)/N_ciclos
             v_f = v_f + interpolador_2(t_f + (indx-1)/frecuencia)/N_ciclos
-            v_fondo_interp_aux = v_fondo_interp_aux + interpolador_fondo_2(t_f + (indx-1)/frecuencia)/N_ciclos
-            v_fondo_interp_r_aux = v_fondo_interp_r_aux + interpolador_fondo_2(t_f + (indx-1)/frecuencia)/N_ciclos
+    
     '''Quita valor medio'''
     v_f = v_f - v_f.mean()
     v_r_f = v_r_f - v_r_f.mean()
     '''Paso temporal'''
     delta_t = (t_f[-1]-t_f[0])/len(t_f)
-    return t_f , v_r_f, v_f , v_fondo_interp_aux,v_fondo_interp_r_aux,delta_t
+    return t_f , v_r_f, v_f , delta_t
 
 def fourier_señales(t,t_c,v,v_c,v_r_m,v_r_c,delta_t,polaridad,filtro,frec_limite,name):
     '''
@@ -1878,279 +1818,6 @@ def fourier_señales_5(t,v,v_r_m,delta_t,polaridad,filtro,frec_limite,name,figur
     espectro_f_amp_fase_fem = (f_impar,amp_impar,fases_impar)
     espectro_f_amp_fase_ref = (armonicos_r[0],amplitudes_r[0],fases_r[0])
     return fig, fig2, rec_impares, phi_0,f_0,amp_0,fase_0,espectro_f_amp_fase_fem,espectro_f_amp_fase_ref#,h_aux_impar,g_r_aux[indices_r]
-
-def fourier_señales_6(t, v, v_r_m, v_fondo_interp, v_fondo_interp_r, delta_t, polaridad, filtro, frec_limite, name, figuras=0):
-    '''
-    Toma señales de muestra, fondo interpolado y referencia obtieniendo via fft frecuencias y fases.
-    frec_muestreo = sample rate 1/delta_t (tipicamente 1e8 o 5e7).    
-    Las señales indefectiblemente deben estar recortadas a N ciclos.
-    Establecer frec limite permite filtrar la interferencia de alta señal del generador RF\n
-    Se conoce la polaridad de la señal(del ajuste lineal sobre el ciclo paramagnetico). 
-    
-    Retorna: 
-    - fig, fig2: figuras de espectros
-    - rec_impares: señal muestra reconstruida con armónicos impares
-    - rec_impares_fondo: fondo interpolado reconstruido
-    - rec_impares_fondo_r: referencia fondo interpolado reconstruido
-    - phi_0: defasaje del armónico fundamental
-    - f_0, amp_0, fase_0: parámetros del armónico fundamental de muestra
-    - f_0_ref, amp_0_ref, fase_0_ref: parámetros del armónico fundamental de referencia
-    - espectros completos para muestra, referencia, fondo y referencia fondo
-    '''
-    from scipy.fft import fft, ifft, rfftfreq, irfft
-    from scipy.signal import find_peaks
-    import numpy as np
-    import matplotlib.pyplot as plt
-    
-    t = t - t[0] # Muestra 
-    t_r = t.copy() # y su referencia
-    y = polaridad * v     # muestra (magnetizacion)
-    y_r = v_r_m        # referencia muestra (campo)
-    y_fondo = v_fondo_interp  # fondo interpolado
-    y_fondo_r = v_fondo_interp_r  # referencia fondo interpolado
-    
-    N = len(v)
-    N_r_m = len(v_r_m)
-
-    # Para que el largo de los vectores coincida
-    if len(t) < len(y): # alargo t
-        t = np.pad(t, (0, delta_t*(len(y)-len(t))), mode='linear_ramp', end_values=(0, max(t)+delta_t*(len(y)-len(t))))
-    elif len(t) > len(y): # recorto t    
-        t = np.resize(t, len(y))
-
-    # Idem referencias
-    if len(t_r) < len(y_r): # alargo t
-        t_r = np.pad(t_r, (0, delta_t*(len(y_r)-len(t_r))), mode='linear_ramp', end_values=(0, max(t_r)+delta_t*(len(y_r)-len(t_r))))
-    elif len(t_r) > len(y_r): # recorto t    
-        t_r = np.resize(t_r, len(y_r))
-
-    # Aplico transformada de Fourier a todas las señales
-    f = rfftfreq(N, d=delta_t)
-    f_HF = f.copy() 
-    f = f[np.nonzero(f <= frec_limite)] # limito frecuencias 
-    
-    # Transformada de la señal principal
-    g_aux = fft(y)
-    g = abs(g_aux)                    # magnitud    
-    fase = np.angle(g_aux)
-    
-    # Transformada de la referencia principal
-    f_r = rfftfreq(N_r_m, d=delta_t)
-    f_r = f_r[np.nonzero(f_r <= frec_limite)]
-    g_r_aux = fft(y_r)
-    g_r = abs(g_r_aux)
-    fase_r = np.angle(g_r_aux)
-    
-    # Transformada del fondo interpolado
-    g_fondo_aux = fft(y_fondo)
-    g_fondo = abs(g_fondo_aux)
-    fase_fondo = np.angle(g_fondo_aux)
-    
-    # Transformada de la referencia del fondo interpolado
-    g_fondo_r_aux = fft(y_fondo_r)
-    g_fondo_r = abs(g_fondo_r_aux)
-    fase_fondo_r = np.angle(g_fondo_r_aux)
-     
-    # Recorto vectores hasta frec_limite
-    g_HF = g.copy() 
-    g = np.resize(g, len(f))
-    g_r = np.resize(g_r, len(f_r))
-    g_fondo = np.resize(g_fondo, len(f))
-    g_fondo_r = np.resize(g_fondo_r, len(f_r))
-    g_HF = np.resize(g_HF, len(f_HF))
-    g_HF[np.argwhere(f_HF <= frec_limite)] = 0 # Anulo LF
-
-    # Obtengo frecuencias cuya intensidad relativa supera umbral dado por el filtro
-    indices, _ = find_peaks(abs(g), threshold=max(g)*filtro)
-    indices_r, _ = find_peaks(abs(g_r), threshold=max(g_r)*filtro)
-    indices_fondo, _ = find_peaks(abs(g_fondo), threshold=max(g_fondo)*filtro)
-    indices_fondo_r, _ = find_peaks(abs(g_fondo_r), threshold=max(g_fondo_r)*filtro)
-
-    for elem in indices:
-        if f[elem] < 0.9*f_r[indices_r[0]]:
-            print('ATENCION: detectada subfrecuencia anómala en el espectro de la señal de muestra {:.2f} Hz\n'.format(f[elem]))
-            indices = np.delete(indices, 0)
-            
-    armonicos = f[indices]
-    amplitudes = g[indices]
-    fases = fase[indices]
-
-    armonicos_r = f_r[indices_r]
-    amplitudes_r = g_r[indices_r]
-    fases_r = fase_r[indices_r]
-    
-    # Frecuencias/indices multiplo impar/par de la fundamental
-    frec_multip = []
-    indx_impar = []
-    indx_par = []
-
-    for n in range(int(frec_limite // int(armonicos[0]))):
-        frec_multip.append((2*n+1)*armonicos[0]/1000)
-        if (2*n+1)*indices[0] <= len(f):
-            indx_impar.append((2*n+1)*indices[0])
-            indx_par.append((2*n)*indices[0])
-
-    f_impar = f[indx_impar]
-    amp_impar = g[indx_impar]
-    fases_impar = fase[indx_impar]
-    
-    # Unwrapeo las fases
-    fases_unw = np.unwrap(fases % (2*np.pi))
-    fases_impar_unw = np.unwrap(fases_impar % (2*np.pi))
-    fases_r = np.unwrap(fases_r % (2*np.pi))
-
-    del indx_par[0]
-    f_par = f[indx_par] 
-    amp_par = g[indx_par]
-    fases_par = fase[indx_par]
-    
-    # Imprimo tabla 
-    print('\nAnalisis armonico sobre fem de referencia (campo) y muestra:')
-    print('''Espectro de la señal de Campo:\nFrecuencia (Hz) - Intensidad rel - Fase (rad)''')
-    for j in range(len(indices_r)):
-        print(f'{armonicos_r[j]:^13.2f}|{amplitudes_r[j]/max(amplitudes_r):^12.2f}|{fases_r[j]:^12.4f}')
-    
-    print('''\nEspectro de la señal de muestra:\nFrecuencia_Hz|Intensidad rel|Dphi_relativo''')
-    for i in range(len(indices)):
-        print(f'{armonicos[i]:^13.2f}|{amplitudes[i]/max(amplitudes):^14.2f}|{fases_r[0] - fases[i]:^12.4f}')
-
-    # Reconstruyo señal IMPAR con ifft para todas las señales
-    
-    # Para señal principal
-    h_aux_impar = np.zeros(len(f), dtype=np.cdouble)
-    for W in indx_impar:
-        h_aux_impar[W] = g_aux[W]
-    rec_impares = irfft(h_aux_impar, n=len(t))
-    
-    # Para fondo interpolado
-    h_aux_impar_fondo = np.zeros(len(f), dtype=np.cdouble)
-    for W in indx_impar:
-        h_aux_impar_fondo[W] = g_fondo_aux[W]
-    rec_impares_fondo = irfft(h_aux_impar_fondo, n=len(t))
-    
-    # Para referencia del fondo interpolado
-    h_aux_impar_fondo_r = np.zeros(len(f_r), dtype=np.cdouble)
-    for W in indx_impar:
-        if W < len(f_r):  # Asegurar que el índice esté dentro del rango
-            h_aux_impar_fondo_r[W] = g_fondo_r_aux[W]
-    rec_impares_fondo_r = irfft(h_aux_impar_fondo_r, n=len(t_r))
-    
-    # Reconstruyo señal PAR con ifft
-    h_aux_par = np.zeros(len(f), dtype=np.cdouble)
-    for Z in indx_par:
-        h_aux_par[Z] = g_aux[Z] 
-    rec_pares = irfft(h_aux_par, n=len(t))
-
-    # Reconstruyo señal de alta frecuencia
-    rec_HF = irfft(g_HF, n=len(t))
-    resta = y - rec_HF
-
-    #Grafico 1.0 (Muestra): 
-    fig = plt.figure(figsize=(8,12),constrained_layout=True)
-    plt.suptitle('Análisis Espectral Muestra',fontsize=20)
-
-    #Señal Orig + Ref
-    ax1 = fig.add_subplot(3,1,1)
-    ax1.plot(t,y/max(y),'.-',lw=0.9,label='Muestra')
-    ax1.plot(t_r,y_r/max(y_r),'.-',c='tab:red',lw=0.9,label='Referencia')
-    ax1.set_xlabel('t (s)')
-    ax1.set_xlim(0,2/armonicos[0])
-    ax1.axvspan(0,1/armonicos[0],color='g',alpha=0.3)
-    ax1.set_title('Muestra y referencia - '+str(name), loc='left', fontsize=13)
-    ax1.legend(loc='best')
-    ax1.grid()  
-
-    #Espectro de Frecuencias 
-    ax2 = fig.add_subplot(3,1,2)
-    ax2.plot(f/1000,g,'.-',lw=0.9)
-    for item in frec_multip:
-        ax2.axvline(item,0,1,color='r',alpha=0.4,lw=0.9)   
-    ax2.scatter(f_impar/1000,amp_impar,marker='x',c='tab:orange',label='armónicos impares',zorder=2.5)
-    ax2.set_title('Espectro de frecuencias - {}% - frec max: {:.0f} kHz'.format(filtro*100,frec_limite/1e3), loc='left', fontsize=13)
-    ax2.set_xlabel('Frecuencia (kHz)')
-    ax2.set_ylabel('|F{$\epsilon$}|')   
-    ax2.set_xlim(0,max(f)/1000)
-    ax2.legend(loc='best')
-
-    # Espectro de Fases 
-    ax3 = fig.add_subplot(3,1,3)
-    ax3.stem(armonicos/1000,fases_unw,basefmt=' ')
-    ax3.scatter(f_impar/1000,fases_impar_unw,marker='s',color='tab:orange',label='armónicos impares',zorder=2.5)
-    ax3.axhline(0,0,max(armonicos)/1000,c='k',lw=0.8)
-    for item in frec_multip:
-        ax3.axvline(item,.1,0.92,color='r',alpha=0.4,lw=0.9)  
-    ax3.set_ylabel('Fase unw')
-    ax3.set_xlabel('Frecuencia (kHz)')
-    ax3.set_title('Espectro de fases',loc='left', fontsize=13)
-    ax3.set_xlim(0,max(f)/1000)
-    ax3.grid(axis='y')
-    ax3.legend()
-
-    #Redefino angulos p/ Fasorial impar
-    defasaje_m = fases_r - fases_impar
-    
-    #Grafico 2.0: Espectro Impar, Fasorial, Original+Rec_impar (Muestra)
-    fig2 = plt.figure(figsize=(8,12),constrained_layout=True)
-    plt.suptitle('Reconstruccion impar',fontsize=20)
-    
-    # Señal Original + Reconstruida impars
-    ax1=fig2.add_subplot(3,1,1)
-    ax1.plot(t,y,'.-',lw=0.9,label='Señal original')
-    ax1.plot(t,rec_impares,'-',lw=1.3,label='Componentes impares')
-    ax1.plot(t,rec_pares,'-',lw=1.1,label='Componentes pares')
-    ax1.set_xlabel('t (s)')
-    ax1.set_xlim(0,3/armonicos[0])
-    ax1.axvspan(0,1/armonicos[0],color='g',alpha=0.3)
-    ax1.set_title(str(name))
-    ax1.grid() 
-    ax1.legend(loc='best')
-    ax1.set_ylim(-1.4*max(rec_impares),max(rec_impares)*1.4)
-    
-    # Espectro en fases impares
-    ax2=fig2.add_subplot(3,1,2)
-    ax2.scatter(f_impar/1000,amp_impar,marker='o',c='tab:blue',label='Armónicos impares',zorder=2.5)
-    ax2.vlines(f_impar/1000, ymin=0, ymax=amp_impar)
-    ax2.axvline(armonicos_r/1000, ymin=0, ymax=1,c='tab:red',label='Referencia',lw=1,alpha=0.8)
-    ax2.set_title('Espectro de la señal reconstruida', loc='left', fontsize=13)
-    ax2.set_xlabel('Frecuencia (kHz)')
-    ax2.set_ylabel('|F{$\epsilon$}|')   
-    ax2.set_xlim(0,max(f)/1000)
-    ax2.set_ylim(0,max(amp_impar)*1.1)
-    ax2.grid()
-    
-    # Fase
-    ax3=fig2.add_subplot(3,1,3)
-    ax3.scatter(f_impar/1000,fases_impar_unw,label='Fases')
-    ax3.vlines(f_impar/1000, ymin=0, ymax=fases_impar_unw)
-    ax3.scatter(armonicos_r/1000,fases_r,label='Fases ref',c='tab:red')
-    ax3.axhline(0,0,max(f_impar)/1000,c='k',lw=0.8)
-    ax3.set_xlabel('Frecuencia (kHz)', fontsize=8)
-    ax3.grid()
-    ax3.set_title(' Espectro de fases',loc='left', y=0.87, fontsize=10)
-    ax3.set_xlim(0,max(f)/1000)
-    
-    phi_0 = defasaje_m[0]
-    
-    f_0 = f_impar[0] 
-    amp_0 = amp_impar[0]
-    fase_0 = fases_impar[0]
-    
-    # Parámetros del armónico fundamental de referencia
-    f_0_ref = armonicos_r[0]
-    amp_0_ref = amplitudes_r[0]
-    fase_0_ref = fases_r[0]
-    
-    # Espectros completos
-    espectro_f_amp_fase_fem = (f_impar, amp_impar, fases_impar)
-    espectro_f_amp_fase_ref = (armonicos_r, amplitudes_r, fases_r)
-    espectro_f_amp_fase_fondo = (f_impar, amp_impar, fases_impar)
-    espectro_f_amp_fase_fondo_r = (armonicos_r, amplitudes_r, fases_r)
-    
-    return (fig, fig2, rec_impares, rec_impares_fondo, rec_impares_fondo_r, 
-            phi_0, f_0, amp_0, fase_0, f_0_ref, amp_0_ref, fase_0_ref,
-            espectro_f_amp_fase_fem, espectro_f_amp_fase_ref,
-            espectro_f_amp_fase_fondo, espectro_f_amp_fase_fondo_r)
-
 
 #%% lector de temperaturas 
 def lector_templog(directorio, plot=False):

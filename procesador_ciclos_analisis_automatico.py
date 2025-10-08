@@ -1,6 +1,6 @@
 #%% 
 '''
-procesador_ciclos_autom_analis_rapido.py
+procesador_ciclos_autom_analis_automatico.py
 
 Giuliano Andrés Basso
 
@@ -24,7 +24,7 @@ Calcula el tiempo de transicion de fase utilizando criterio en T y en dT/dt
 Toma la hora guardada en archivos (1er fila a comentario, por lo que tmb se modifico OWON_con_python.py)
 Interpola t y T del templog entre tiempo de las medidas (dt=0.01, dT=0.01) y asigna Temperatura a cada muestra en base a eso
 
-11 Sept 25
+11 Sept 24
 Optimizado para calcular la pendiente del ciclo del paramagneto
 
 04 Oct 24
@@ -55,18 +55,18 @@ from tkinter import filedialog
 from uncertainties import ufloat, unumpy
 from datetime import datetime,timedelta
 from numpy.core.numeric import indices
-from funciones_procesado import medida_cruda, medida_cruda_autom,ajusta_seno, sinusoide,resta_inter,filtrando_ruido,recorte,promediado_ciclos,fourier_señales_5,fourier_señales_6,lector_templog_2,lector_templog,susceptibilidad_M_0
+from funciones_procesado import medida_cruda, medida_cruda_autom,ajusta_seno, sinusoide,resta_inter,filtrando_ruido,recorte,promediado_ciclos,fourier_señales_5,lector_templog_2,lector_templog,susceptibilidad_M_0
 
 #%% Configuracion de Script
 todos=1
 un_solo_fondo=1
 resto_fondo=1
 templog = 0
-N_espiras_bob_captora=1
-nombre='*Eli Autoclave'
+N_espiras_bob_captora=5
+nombre='*Eli_NF'
 Analisis_de_Fourier = 1 # sobre las señales, imprime espectro de señal muestra
-N_armonicos_impares = 10
-concentracion =12.1*1e3 #[concentracion]= g/m^3 (1 g/l == 1e3 g/m^3) (Default = 10000 g/m^3)
+N_armonicos_impares = 12
+concentracion =6.7*1e3 #[concentracion]= g/m^3 (1 g/l == 1e3 g/m^3) (Default = 10000 g/m^3)
 capsula_glucosa=0   # capsula para solventes organicos
 detector_ciclos_descartables=True #en funcion a Mag max para evitar guardar/promediar con ciclos in/out
 Ciclo_promedio=1
@@ -84,7 +84,7 @@ graficos={
         'Campo_y_Mag_norm_c': 0,
         'Ciclos_HM_calibracion': 0,
         'Campo_y_Mag_norm_m': 0,
-        'Ciclo_HM_m': 0,
+        'Ciclo_HM_m': 1,
         'Susceptibilidad_M_0':0,
         'Ciclos_HM_m_todos': 1}
 mu_0 = 4*np.pi*10**-7 #[mu_0]=N/A^2
@@ -96,14 +96,16 @@ pendiente_HvsI = 3716.3 # 1/m
 ordenada_HvsI = 1297.0 # A/m
 # =============================================================================
 #Calibracion de la magnetizacion: cte que dimensionaliza a M en Vs --> A/m
-xi_patron_Dy2O3_v = 5.351e-3 #adimensional. Valor de VSM sobre capsula
+xi_patron_Dy2O3_v = 5.704e-3 #adimensional. Valor de VSM sobre capsula
+
 if N_espiras_bob_captora==5:
     pendiente_patron_Dy2O3 = ufloat(2.0861745031033012e-13,5.773563581411776e-14) #Vsm/A - (N=5 27 Nov 24)
 elif N_espiras_bob_captora==1:
-    pendiente_patron_Dy2O3 = ufloat(4.584443008514465e-14,4.441474310168033e-15) #Vsm/A - (N=1 30 Sept 24)
+    # pendiente_patron_Dy2O3 = ufloat(4.584443008514465e-14,4.441474310168033e-15) #Vsm/A - (N=1 30 Sept 24)
+    pendiente_patron_Dy2O3 = ufloat(8.7e-14,0.2e-14) #Vsm/A - (N=1 - 2 Oct 25)
 else:
     print('Especificar Num de espiras del par captor')
-
+#aca podria agregar algo para checkear que N coincida con el de nombre de archivo
 C_Vs_to_Am_magnetizacion = xi_patron_Dy2O3_v/pendiente_patron_Dy2O3.nominal_value #A/mVs
 if capsula_glucosa ==1:
     C_Vs_to_Am_magnetizacion = C_Vs_to_Am_magnetizacion*0.506
@@ -115,7 +117,7 @@ print(f'''
       Dir de trabajo: {os.getcwd()}
       Selecciono todos los archivos del directorio: {bool(todos)}
       Resto señal de fondo: {bool(resto_fondo)}
-      Identificador de archivos de muestra: {nombre}
+      Identificador de archivos de muestra': {nombre}
       N° de espiras x bobina captora: {N_espiras_bob_captora}
       Filtrado en armonicos impares: {bool(Analisis_de_Fourier)}
       Num de armonicos impares considerados: {N_armonicos_impares}
@@ -131,17 +133,14 @@ Ciclos_eje_M_filt =[]
 Ciclos_tiempo=[]
 Ciclos_eje_H_ua=[]
 Ciclos_eje_M_ua=[]
-Ciclo_fondo_H=[]
-Ciclo_fondo_M=[]
-Ciclo_fondo_M_ua=[]
-Ciclo_fondo_H_ua=[]
+    
 Frecuencia_ref_muestra_kHz = []
+
 Frecuencia_ref_fondo_kHz = []
 Frec_fund=[]
 SAR = []
 SAR_filt=[]
 SAR_area=[]
-
 Campo_maximo = []
 Mag_max=[]
 Coercitividad_kAm = []
@@ -160,12 +159,10 @@ cociente_f2_f0 = []
 fecha_nombre = datetime.today().strftime('%Y%m%d_%H%M%S')
 fecha_graf = time.strftime('%Y_%m_%d', time.localtime())
 
-pendientes=[]
-amplitudes=[]
+
 #%% Seleccion de carpeta con archivos via interfaz de usuario
 root = tk.Tk()
 root.withdraw()
-root.attributes('-topmost', True)
 if todos==1: #Leo todos los archivos del directorio
     texto_encabezado = "Seleccionar la carpeta con las medidas a analizar:"
     directorio = filedialog.askdirectory(title=texto_encabezado)
@@ -223,7 +220,7 @@ for k in range(len(fnames_m)):
         fecha_in_file = f.readline()
         Fechas_from_file.append(fecha_in_file.split()[-1])
         
-
+#%%
 with open(path_m[-1], 'r') as f:
     fecha_in_file_f = f.readline().split()[-1]
     Fechas_from_file_descancelacion.append(fecha_in_file_f)
@@ -248,7 +245,7 @@ if templog:
         time_m = np.round(delta_0 + np.cumsum(time_delta),2)
         temp_m = np.array([temperatura_interpolada[np.flatnonzero(tiempo_interpolado==t)[0]] for t in time_m])
 
-        cmap = mpl.colormaps['jet'] #'viridis'
+        cmap = mpl.colormaps['viridis'] #'viridis'
         normalized_temperaturas = (np.array(temp_m) - np.array(temp_m).min()) / (np.array(temp_m).max() - np.array(temp_m).min())
         colors = cmap(normalized_temperaturas)
 
@@ -262,7 +259,7 @@ if templog:
         plt.legend(loc='lower right')
         plt.grid()
         plt.title('Temperatura de la muestra',fontsize=18)
-        #plt.savefig(os.path.join(output_dir,os.path.commonprefix(fnames_m)+'_templog.png'),dpi=300,facecolor='w')
+        plt.savefig(os.path.join(output_dir,os.path.commonprefix(fnames_m)+'_templog.png'),dpi=300,facecolor='w')
         plt.show()
 
     except IndexError:
@@ -272,7 +269,7 @@ if templog:
 else:
     print('No se requiere archivo con templog')
     temp_m=np.array([float(20) for f in fnames_m])
-    cmap = mpl.colormaps['jet']  #'viridis' # Crear un rango de colores basado en las temperaturas y el cmap
+    cmap = mpl.colormaps['viridis']  # Crear un rango de colores basado en las temperaturas y el cmap
     norm = plt.Normalize(temp_m.min(), temp_m.max())
 
 
@@ -292,11 +289,11 @@ if Transicion_de_fase==1:
     fig,(ax,ax2)= plt.subplots(nrows=2,figsize=(10,8),sharex=True,constrained_layout=True)
     ax.plot(time_m,T_m , '.-',label='Temperatura',zorder=2)
     ax.plot(time_m[indx_TF], T_m[indx_TF], 'go-',label='Transicion de Fase',zorder=1)
-    ax.axvspan(tiempo_interpolado[indx_TF_interp[0][0]],tiempo_interpolado[indx_TF_interp[0][-1]],color='tab:red',alpha=0.5,label=f'T Fase ({filtro_T[0]}<T<{filtro_T[1]} ºC)',zorder=0)
+    # ax.axvspan(tiempo_interpolado[indx_TF_interp[0][0]],tiempo_interpolado[indx_TF_interp[0][-1]],color='tab:red',alpha=0.5,label=f'T Fase ({filtro_T[0]}<T<{filtro_T[1]} ºC)',zorder=0)
     # ax.plot(time_m[indx_TF],T_m[indx_TF] , 'g.-')
 
     ax2.plot(time_m,dT_dt , '.-',label='dT/dt')
-    ax2.axvspan(tiempo_interpolado[indx_TF_interp[0][0]],tiempo_interpolado[indx_TF_interp[0][-1]],color='tab:red',alpha=0.5,label=f'T Fase (|dT/dt| <{filtro_dT_dt} ºC/s)',zorder=-2)
+    # ax2.axvspan(tiempo_interpolado[indx_TF_interp[0][0]],tiempo_interpolado[indx_TF_interp[0][-1]],color='tab:red',alpha=0.5,label=f'T Fase (|dT/dt| <{filtro_dT_dt} ºC/s)',zorder=-2)
     ax2.axhline(y=filtro_dT_dt, color='k',lw=1, linestyle='--')
     ax2.axhline(y=-filtro_dT_dt, color='k',lw=1, linestyle='--')
     ax2.set_xlabel('t (s)')
@@ -373,7 +370,7 @@ for k in range(len(fnames_m)):
 
     # Comparacion de señales y ajustes
     if graficos['Referencias_y_ajustes']==1:
-        fig , ax = plt.subplots(2,1, figsize=(8,6),sharex='all',constrained_layout=True)
+        fig , ax = plt.subplots(2,1, figsize=(8,6),sharex='all')
 
         df_m.plot('t','v_r',label='Referencia',ax=ax[0],title=f'Muestra: {fnames_m[k]}')
         df_m.plot('t','v_r_ajustada',label='Ajuste',ax =ax[0])
@@ -384,7 +381,7 @@ for k in range(len(fnames_m)):
         df_f.plot('t','residuos', label='Residuos',ax=ax[1])
 
         fig.suptitle('Comparacion señal de referencias y ajustes',fontsize=20)
-
+        plt.tight_layout()
 
     '''
     Cortafuegos: Si la diferencia entre frecuencias es muy grande => error
@@ -411,16 +408,14 @@ for k in range(len(fnames_m)):
     Ejecuto resta_inter() sobre fem de muestra
     '''
     if graficos['Resta_m-f']==1:
-        Resta_m, t_m_1, v_r_m_1, v_fondo_interp, v_fondo_interp_r, figura_m = resta_inter(t_m, v_m, v_r_m, fase_m, frec_m, offset_m,df_f['t'], df_f['v'], df_f['v_r'], fase_f, frec_f, 'muestra')
+        Resta_m , t_m_1 , v_r_m_1 , figura_m = resta_inter(t_m,v_m,v_r_m,fase_m,frec_m,offset_m,df_f['t'],df_f['v'],df_f['v_r'],fase_f,frec_f,'muestra')
     else:
-        Resta_m, t_m_1, v_r_m_1, v_fondo_interp, v_fondo_interp_r, figura_m = resta_inter(t_m, v_m, v_r_m, fase_m, frec_m, offset_m,df_f['t'], df_f['v'], df_f['v_r'], fase_f, frec_f, 0)
+        Resta_m , t_m_1 , v_r_m_1 , figura_m = resta_inter(t_m,v_m,v_r_m,fase_m,frec_m,offset_m,df_f['t'],df_f['v'],df_f['v_r'],fase_f,frec_f,0)
 
-    
     # Grafico las restas
     if graficos['Resta_mf_y_cf']==1:
         plt.figure(figsize=(10,5))
         plt.plot(t_m_1,Resta_m,'.-',lw=0.9,label='Muestra - fondo')
-        plt.plot(t_m_1,v_fondo_interp,'-',lw=0.9,c='grey',label='fondo')
         # plt.plot(t_c_1,Resta_c,'.-',lw=0.9,label='Calibracion - fondo')
         plt.grid()
         plt.legend(loc='best')
@@ -435,9 +430,9 @@ for k in range(len(fnames_m)):
     Ejecuto recorte() sobre fem de muestra
     '''
     if graficos['Recorte_a_periodos_enteros_m']==1:
-        t_m_3, v_r_m_3 , Resta_m_3, v_fondo_interp_2, v_fondo_interp_r_2, N_ciclos_m, figura_m_3 = recorte(t_m_1,v_r_m_1,Resta_m,frec_m,v_fondo_interp,v_fondo_interp_r,'muestra')
+        t_m_3, v_r_m_3 , Resta_m_3, N_ciclos_m, figura_m_3 = recorte(t_m_1,v_r_m_1,Resta_m,frec_m,'muestra')
     else:
-        t_m_3, v_r_m_3 , Resta_m_3, v_fondo_interp_2, v_fondo_interp_r_2, N_ciclos_m, figura_m_3 = recorte(t_m_1,v_r_m_1,Resta_m,frec_m,v_fondo_interp,v_fondo_interp_r,0)
+        t_m_3, v_r_m_3 , Resta_m_3, N_ciclos_m, figura_m_3 = recorte(t_m_1,v_r_m_1,Resta_m,frec_m,0)
 
     '''
     Ultimo ajuste sobre las señales de referencia
@@ -449,7 +444,7 @@ for k in range(len(fnames_m)):
     Promedio los N periodos en 1
     Ejecuto promediado_ciclos() sobre fem muestra y fem campo
     '''
-    t_f_m , fem_campo_m , R_m ,v_fondo_interp_3,v_fondo_interp_3_r, dt_m = promediado_ciclos(t_m_3,v_r_m_3,Resta_m_3,frec_final_m,N_ciclos_m,v_fondo_interp_2,v_fondo_interp_r_2)
+    t_f_m , fem_campo_m , R_m , dt_m = promediado_ciclos(t_m_3,v_r_m_3,Resta_m_3,frec_final_m,N_ciclos_m)
 
     '''
     Integro los ciclos: calcula sumas acumuladas y convierte a fem a campo y magnetizacion
@@ -461,7 +456,7 @@ for k in range(len(fnames_m)):
     campo_ua0_m = dt_m*cumulative_trapezoid(fem_campo_m,initial=0) #[campo_ua0_c]=V*s
     campo_ua_m = campo_ua0_m - np.mean(campo_ua0_m) #Resto offset
     campo_m  = (campo_ua_m/max(campo_ua_m))*C_norm_campo #[campo_c]=A/m
-    campo_fondo_Am = (v_fondo_interp_3_r/max(v_fondo_interp_3_r))*C_norm_campo #[campo_c]=A/m
+
     '''
     La integral de la fem de la muestra (c/ fondo restado),
     es proporcional a la M mas una constante'''
@@ -488,33 +483,32 @@ for k in range(len(fnames_m)):
         - Espectro (f,amp,phi) de muestra
         - Espectro (f,amp,phi) de referencia (fem de campo)
     '''
-    #% MOMENTO FOURIER
-    # if Analisis_de_Fourier == 1:
-    #     _, _, muestra_rec_impar,delta_phi_0,f_0,amp_0,fase_0, espectro_f_amp_fase_m,espectro_ref = fourier_señales_5(t_m_3,Resta_m_3,v_r_m_3,
-    #                                                                                                     delta_t=delta_t[k],polaridad=polaridad,
-    #                                                                                                     filtro=0.05,frec_limite=2*N_armonicos_impares*frec_final_m,
-    #                                                                                                     name=fnames_m[k])
     # MOMENTO FOURIER
-    if Analisis_de_Fourier == 1:
-        (_, _, muestra_rec_impar, fondo_rec_impar, fondo_r_rec_impar,
-        delta_phi_0, f_0, amp_0, fase_0, f_0_ref, amp_0_ref, fase_0_ref,
-        espectro_f_amp_fase_m, espectro_ref, espectro_fondo, espectro_fondo_r) = fourier_señales_6(
-            t_m_3, Resta_m_3, v_r_m_3, v_fondo_interp_2, v_fondo_interp_r_2,
-            delta_t=delta_t[k], 
-            polaridad=polaridad,
-            filtro=0.05, frec_limite=2*N_armonicos_impares*frec_final_m,
-            name=fnames_m[k])
+    if Analisis_de_Fourier == 1: 
+        fig_fourier, fig2_fourier, muestra_rec_impar,delta_phi_0,f_0,amp_0,fase_0, espectro_f_amp_fase_m,espectro_ref = fourier_señales_5(t_m_3,Resta_m_3,v_r_m_3,
+                                                                                                        delta_t=delta_t[k],polaridad=polaridad,
+                                                                                                        filtro=0.05,frec_limite=2*N_armonicos_impares*frec_final_m,
+                                                                                                        name=fnames_m[k])
 
-        # Ahora puedes usar los valores escalares:
-        print(f'\nf0 campo: {f_0_ref:.2f} Hz')
+        # Guardo graficos fourier: señal/espectro y señal impar/espectro filtrado
+        output_dir_espectros= os.path.join(output_dir,'espectros_reconstrucciones')
+        if not os.path.exists(output_dir_espectros):# Crear el subdirectorio si no existe
+            os.makedirs(output_dir_espectros)
+        
+        fig_fourier.savefig(os.path.join(output_dir_espectros,fnames_m[k]+'_Espectro.png'),dpi=200,facecolor='w')
+        fig2_fourier.savefig(os.path.join(output_dir_espectros,fnames_m[k]+'_Rec_impar.png'),dpi=200,facecolor='w')
+
+        print(f'\nf0 campo: {espectro_ref[0]:.2f} Hz')
         print(f'\nf0 muestra: {f_0:.2f} Hz')
         print(f'Delta t: {(t_m_3[-1]-t_m_3[0]):.2e}')
+        print(f'N de periodos enteros: {N_ciclos_m}')
+        print(f'Num de puntos de la seña: {len(Resta_m_3)}')
 
         #CALCULO SAR
         Hmax=max(campo_m)
         N = len(Resta_m_3)
         sar = mu_0*Hmax*(amp_0*C_Vs_to_Am_magnetizacion)*np.sin(delta_phi_0)/(concentracion*N)
-
+        
         print(f'\nSAR: {sar:.2f} (W/g)')
         print(f'Concentracion: {concentracion/1000} g/L')
         print(f'Fecha de la medida: {fecha_m[k]}')
@@ -523,48 +517,30 @@ for k in range(len(fnames_m)):
         tau=np.tan(delta_phi_0)/(2*np.pi*frec_final_m)
 
         # Hasta aca lo que tiene que ver con analisis armonico
-        # 26 Ago 25 ajusto sinusoide a la señal reconstruida y obtengo la amplitud real
-        offset_rec,amp_rec,frec_rec,fase_rec = ajusta_seno(t_m_3,muestra_rec_impar)
-        amplitudes.append(amp_rec*1e3) #guardo en mV
-        fig,ax=plt.subplots(figsize=(8,4),constrained_layout=True)
-        ax.plot(t_m_3,muestra_rec_impar*1e3,'.-',label='Señal reconstruida')
-        ax.plot(t_m_3,sinusoide(t_m_3,0,amp_rec*1e3,frec_rec,fase_rec),label='Ajuste senoidal')
-        ax.grid()
-        ax.legend()
-        ax.set_xlabel('t (s)')
-        ax.set_ylabel('voltaje (mV)')
-        ax.set_title('Ajuste sinusoide a la señal reconstruida',loc='left')
-        plt.show()
-        #fig.savefig(fnames_m[k]+'_Ajuste_sinusoide.png',dpi=200,facecolor='w')
-        
         '''
         Reemplazo señal recortada con la filtrada en armonicos impares:
             Resta_m_3 ==> muestra_rec_impar
         Ejecuto promediado_ciclos() sobre muestra_rec_impar
         '''
-        t_f_m , fem_campo_m , fem_mag_m ,v_fondo_interp_3, _,dt_m = promediado_ciclos(t_m_3,v_r_m_3,muestra_rec_impar,frec_final_m,N_ciclos_m,fondo_rec_impar, fondo_r_rec_impar)
+        t_f_m , fem_campo_m , fem_mag_m , dt_m = promediado_ciclos(t_m_3,v_r_m_3,muestra_rec_impar,frec_final_m,N_ciclos_m)
 
         magnetizacion_ua0_m_filtrada = dt_m*cumulative_trapezoid(fem_mag_m,initial=0)
         magnetizacion_ua_m_filtrada = magnetizacion_ua0_m_filtrada-np.mean(magnetizacion_ua0_m_filtrada)
-        senal_fondo_ua0 = dt_m*cumulative_trapezoid(v_fondo_interp_3,initial=0)
-        senal_fondo_ua = senal_fondo_ua0 - np.mean(senal_fondo_ua0) 
+
     else:
         #Sin analisis de Fourier, solamente acomodo la polaridad de la señal de la muestra.
-        t_f_m , fem_campo_m , fem_mag_m , v_fondo_interp_3,dt_m = promediado_ciclos(t_m_3,v_r_m_3,Resta_m_3*polaridad,frec_final_m,N_ciclos_m,v_fondo_interp_2)
+        t_f_m , fem_campo_m , fem_mag_m , dt_m = promediado_ciclos(t_m_3,v_r_m_3,Resta_m_3*polaridad,frec_final_m,N_ciclos_m)
     
-    m_fondo =(max(senal_fondo_ua)-min(senal_fondo_ua)) /(max(campo_fondo_Am)-min(campo_fondo_Am))
     '''
     Asigno unidades a la magnetizacion utilizando la calibracion que esta al principio del script
     '''
     magnetizacion_m = C_Vs_to_Am_magnetizacion*magnetizacion_ua_m #[magnetizacion_m]=A/m
     magnetizacion_m_filtrada = C_Vs_to_Am_magnetizacion*magnetizacion_ua_m_filtrada #[magnetizacion_m_filtrada]=A/m
-    senal_fondo_Am = C_Vs_to_Am_magnetizacion*senal_fondo_ua #[senal_fondo_Am]=A/m
-        
+    
     magnetizacion_m_des = magnetizacion_m + 2*abs(min(magnetizacion_m))
     Area_ciclo = abs(trapezoid(magnetizacion_m_des,campo_m)) 
     sar_area =  mu_0*Area_ciclo*frec_final_m/(concentracion)  #[sar]=[N/A^2]*[A^2/m^2]*[1/s]*[m^3/g]=W/g
     print(f'\nSAR area: {sar_area:.2f} (W/g)')
-
     '''
     Ploteo H(t) y M(t) normalizados
     '''
@@ -603,15 +579,22 @@ for k in range(len(fnames_m)):
     Mr_error = np.std(Mr)
     print(f'\nHc = {Hc_mean:.2f} (+/-) {Hc_error:.2f} (A/m)')
     print(f'Mr = {Mr_mean:.2f} (+/-) {Mr_error:.2f} (A/m)')
-    #%
+    
     '''
     Ploteo ciclo de histeresis individual
     '''
     if graficos['Ciclo_HM_m']==1:
+        
+        cmap = mpl.colormaps['viridis']
+        norm = plt.Normalize(temp_m.min(), temp_m.max())# Crear un rango de colores basado en las temperaturas y el cmap
         color = cmap(norm(temp_m[k]))
+        output_dir_ciclos= os.path.join(output_dir,'ciclos_H_M')
+        if not os.path.exists(output_dir_ciclos):# Crear el subdirectorio si no existe
+            os.makedirs(output_dir_ciclos)
+            
         fig , ax =plt.subplots(figsize=(7,5.5), constrained_layout=True)
-        ax.plot(campo_m,magnetizacion_m,'.-',label=f'{fnames_m[k].split("_")[-1].split(".txt")[0]}')
-        ax.plot(campo_m,magnetizacion_m_filtrada,color=color,label=f'{fnames_m[k].split("_")[-1].split(".txt")[0]} ({N_armonicos_impares} armónicos)')
+        ax.plot(campo_m,magnetizacion_m,'.-',label=f'{fnames_m[k].split("_")[-1].split(".txt")[0][5:]}')
+        ax.plot(campo_m,magnetizacion_m_filtrada,color=color,label=f'{fnames_m[k].split("_")[-1].split(".txt")[0][5:]} ({N_armonicos_impares} armónicos)')
         ax.scatter(0,Mr_mean,marker='s',c='tab:orange',label=f'M$_r$ = {Mr_mean:.0f} A/m')
         ax.scatter(Hc_mean,0,marker='s',c='tab:orange',label=f'H$_c$ = {Hc_mean:.0f} A/m')
         # ax.plot(campo_m,magnetizacion_m_filtrada_fase,label='Muestra filtrada s/fase')
@@ -622,8 +605,8 @@ for k in range(len(fnames_m)):
         plt.title('Ciclo de histéresis de la muestra\n'+fnames_m[k][:-4])
         plt.text(0.75,0.25,f'T = {temp_m[k]} °C\nSAR = {sar:0.1f} W/g',fontsize=13,bbox=dict(color='tab:red',alpha=0.6),
                  va='center',ha='center',transform=ax.transAxes)
-        plt.savefig(os.path.join(output_dir,os.path.commonprefix(fnames_m),'_ciclo_H_M.png'),dpi=200,facecolor='w')
-
+        plt.savefig(os.path.join(output_dir_ciclos,fnames_m[k][:-4])+'_ciclo_H_M.png',dpi=200,facecolor='w')
+        plt.close(fig)
     # Xi Susceptibilidad a M=0 (excepto ultimo archivo que es el control de descancelacion)
     if k != len(fnames_m):
         if graficos['Susceptibilidad_M_0']==1:
@@ -656,35 +639,6 @@ for k in range(len(fnames_m)):
     Defasaje_1er_arm.append(delta_phi_0)
     Tau.append(tau)                                 #Calculado con magnitud y defasaje
     SAR.append(sar)                                 #Calculado con magnitud y defasaje
-
-    # cociente_f1_f0.append(espectro_f_amp_fase_m[1][1]/espectro_f_amp_fase_m[1][0])
-    # cociente_f2_f0.append(espectro_f_amp_fase_m[1][2]/espectro_f_amp_fase_m[1][0])
-
-    # Salvo en listas para exportar tabla de resultados mas adelante    
-    Ciclos_tiempo.append(t_f_m[:] - t_f_m[0])
-    Ciclos_eje_H_ua.append(campo_ua_m)
-    Ciclos_eje_M_ua.append(magnetizacion_ua_m)
-    Ciclos_eje_H.append(campo_m)
-    Ciclos_eje_M.append(magnetizacion_m)
-    Ciclos_eje_M_filt.append(magnetizacion_m_filtrada)
-    Campo_maximo.append(Hmax)                       #Campo maximo en A/m
-    Mag_max.append(max(magnetizacion_m_filtrada))   #Magnetizacion maxima
-    Coercitividad_kAm.append(Hc_mean/1000)          #Campo coercitivo en kA/m
-    Remanencia_Am.append(Mr_mean)                   #Magnetizacion remanente en kA/m
-    xi_M_0.append(susc_a_M_0)                       #Sin unidades
-    Ciclo_fondo_H.append(campo_fondo_Am)          #Ciclo de fondo en A/m
-    Ciclo_fondo_M.append(senal_fondo_Am)          #Ciclo de fondo en A/m
-    Ciclo_fondo_M_ua.append(senal_fondo_ua)          #Ciclo de fondo en A/m
-    Ciclo_fondo_H_ua.append(v_fondo_interp_3_r)          
-    #Ciclo de fondo en A/m
-
-
-    long_arrays.append(len(Resta_m_3))
-    Frec_fund.append(f_0)
-    Magnitud_1er_arm.append(amp_0)
-    Defasaje_1er_arm.append(delta_phi_0)
-    Tau.append(tau)                                 #Calculado con magnitud y defasaje
-    SAR.append(sar)                                 #Calculado con magnitud y defasaje
     SAR_area.append(sar_area)
     
     # cociente_f1_f0.append(espectro_f_amp_fase_m[1][1]/espectro_f_amp_fase_m[1][0])
@@ -701,9 +655,9 @@ for k in range(len(fnames_m)):
     Mag_max.append(max(magnetizacion_m_filtrada))   #Magnetizacion maxima
     Coercitividad_kAm.append(Hc_mean/1000)          #Campo coercitivo en kA/m
     Remanencia_Am.append(Mr_mean)                   #Magnetizacion remanente en kA/m
-    xi_M_0.append(susc_a_M_0)     
+    xi_M_0.append(susc_a_M_0)                       #Sin unidades
 
-    #% EXPORTO CICLOS HM
+    # #% EXPORTO CICLOS HM
     # '''
     # Exporto ciclos de histeresis en ASCII, primero en V.s, despues en A/m :
     # | Tiempo (s) | Campo (V.s) | Magnetizacion (V.s) | Campo (A/m) |  Magnetizacion (A/m)
@@ -729,38 +683,46 @@ for k in range(len(fnames_m)):
     # output_file = os.path.join(output_dir, fnames_m[k][:-4] + '_ciclo_H_M.txt')
     # ascii.write(ciclo_out,output_file,names=encabezado,overwrite=True,delimiter='\t',formats=formato)
 
-
+    plt.close('all')
 #%% DETECTOR CICLOS DESCARTABLES
 fnames_m=np.array(fnames_m)
 
 if detector_ciclos_descartables:
     archivos_in_out=7
-    porcentaje_diferencia=40
-    #%
+    porcentaje_diferencia=20#%
     print(f'Se identifican archivos cuya Mag maxima difieren un {porcentaje_diferencia}% de la')
     print(f'Mag max promedio = {np.mean(Mag_max[archivos_in_out:-archivos_in_out]):.0f}({np.std(Mag_max[archivos_in_out:-archivos_in_out]):.0f}) A/m de los {len(Mag_max[archivos_in_out:-archivos_in_out])} valores centrales.')
 
     indx_discard = np.nonzero((Mag_max[:-1]>(1+porcentaje_diferencia/100)*np.mean(Mag_max[archivos_in_out:-archivos_in_out])) | (Mag_max[:-1]<(1-porcentaje_diferencia/100)*np.mean(Mag_max[archivos_in_out:-archivos_in_out])))[0]
     for ind in indx_discard:
-    
         print(' ->',fnames_m[ind])
 
     print(f'\nDescartamos {len(indx_discard)} archivos de un total de {len(fnames_m)}.')
     print(f'\nArchivo {fnames_f[0]} identificado como Fondo.')
     print(f'Archivo {fnames_m[-1]} identificado como Descancelacion.')
+
+    # Muevo archivos decartados
+    # Directorio de destino
+    # output_dir_ciclos_descartados= os.path.join(output_dir,'ciclos_descartados')
+    # if not os.path.exists(output_dir_ciclos_descartados):# Crear el subdirectorio si no existe
+    #     os.makedirs(output_dir_ciclos_descartados)
+
+    # files_to_move=[fnames_m[f] for f  in indx_discard]
+    # filepaths_to_move=[path_m[f] for f  in indx_discard]
+    # # Mover archivos al subdirectorio
+    # for fp in filepaths_to_move:
+    #     shutil.copy(fp, output_dir_ciclos_descartados)
+    #     #print(f"Copied {fp.split('/')[-1]} to {output_dir_ciclos_descartados}")
     indices_to_stay = np.setdiff1d(np.arange(len(fnames_m)-1), indx_discard)
 
-    
 else:
     print('\nNo se descartó automaticamente ningun ciclo')
     
 
-#%% PLOTEO TODOS LOS CICLOS RAW: campo en A/m magnetizacion en Vs
-cmap = mpl.colormaps['viridis']
-norm = plt.Normalize(0, len(indices_to_stay))# Crear un rango de colores basado en las temperaturas y el cmap
-xaux=np.linspace(-Hmax,Hmax,1000)
-yaux=m_fondo*xaux
+#%% PLOTEO TODOS LOS CICLOS RAW
 
+cmap = mpl.colormaps['viridis']
+norm = plt.Normalize(temp_m.min(), temp_m.max())# Crear un rango de colores basado en las temperaturas y el cmap
 if graficos['Ciclos_HM_m_todos']==1:
     fig = plt.figure(figsize=(9,7),constrained_layout=True)
     ax = fig.add_subplot(1,1,1)
@@ -769,26 +731,26 @@ if graficos['Ciclos_HM_m_todos']==1:
             plt.plot(Ciclos_eje_H[i]/1000,Ciclos_eje_M[i],'.',label=f'{fnames_m[i].split("_")[-1].split(".")[0]:<4s}',alpha=0.5)
 
         for i in indices_to_stay[:-1]: #Ciclos aceptados
-            color = cmap(norm(i))
-            plt.plot(Ciclos_eje_H[i]/1000,Ciclos_eje_M[i],'.-',color=color)
+            color = cmap(norm(temp_m[i]))
+            plt.plot(Ciclos_eje_H[i]/1000,Ciclos_eje_M[i],color=color)
     else:
         for i in range(len(fnames_m[:-1])): #Ciclos aceptados
-            color = cmap(norm(i))
-            plt.plot(Ciclos_eje_H[i]/1000,Ciclos_eje_M_ua[i],color=color)
+            color = cmap(norm(temp_m[i]))
+            plt.plot(Ciclos_eje_H[i]/1000,Ciclos_eje_M[i],color=color)
+        
     
-    plt.plot(xaux/1000,yaux,'--',color='grey',label='AL de fondo') #pendiente del fondo
-    
-    plt.plot(Ciclos_eje_H[-1]/1000,Ciclos_eje_M_ua[-1],'-',color='k',label='Descancelacion') #Descancelacion
+    plt.plot(Ciclos_eje_H[-1]/1000,Ciclos_eje_M[-1],'-',color='k') #Descancelacion
 
 plt.legend(title='Ciclos descartados',ncol=2,loc='best',fancybox=True)
 
+# # Configurar la barra de colores
 sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
 sm.set_array([])  # Esto es necesario para que la barra de colores muestre los valores correctos
-plt.colorbar(sm, label='indx',ax=ax) 
+plt.colorbar(sm, label='Temperatura',ax=ax)  # Agrega una etiqueta adecuada
 #lt.text(0.15,0.75,,fontsize=20,bbox=dict(color='tab:orange',alpha=0.7),transform=ax.transAxes)
 plt.grid()
 plt.xlabel('H (kA/m)',fontsize=15)
-plt.ylabel('M (Vs)',fontsize=15)
+plt.ylabel('M (A/m)',fontsize=15)
 plt.suptitle('Ciclos de histéresis (sin filtrar)',fontsize=20)
 plt.title(f'{frec_nombre[0]/1000:>3.0f} kHz - {round(np.mean(Campo_maximo)/1e3):>4.1f} kA/m',loc='center',fontsize=15)
 plt.savefig(os.path.join(output_dir,os.path.commonprefix(list(fnames_m))+'_ciclos_MH_raw.png'),dpi=300,facecolor='w')
@@ -975,9 +937,9 @@ ascii.write(resultados_out,output_file2,names=encabezado,overwrite=True,delimite
 #guardo SAR x area
 np.savetxt(os.path.join(output_dir,'SAR_area.txt'),np.array(SAR_area),fmt='%e' )
 #%% PLOTEO TODOS LOS CICLOS FILTRADOS IMPAR
-cmap = mpl.colormaps['turbo']
-norm = plt.Normalize(temp_m.min(), temp_m.max())# Crear un rango de colores basado en las temperaturas y el cmap
-
+cmap = mpl.colormaps['viridis']
+#norm = plt.Normalize(temp_m.min(), temp_m.max())# Crear un rango de colores basado en las temperaturas y el cmap
+norm = plt.Normalize(0,len(fnames_m) )
 cuadro_1= fr'$\tau$ = {tau_all:.0f} ns'+f'\nSAR = {SAR_all:.0f} W/g\nH$_c$ = {Coercitividad_all:.1f} kA/m\nM$_r$ = {Remanencia_all:.1f} A/m'+'\nM$_{max}$'+f' = {Mag_max_emu:.1f}'+r' $\frac{emu}{g}$'
 
  
@@ -1018,7 +980,7 @@ plt.savefig(os.path.join(output_dir,os.path.commonprefix(list(fnames_m))+'_ciclo
 
 #%% PLOTEO TODOS LOS CICLOS FILTRADOS de la TRANSICION DE FASE
 if Transicion_de_fase==1:
-    cmap = mpl.colormaps['jet']
+    cmap = mpl.colormaps['viridis']
     norm2 = plt.Normalize(temp_m[indx_TF[0][0]], temp_m[indx_TF[0][-1]])# Crear un rango de colores basado en las temperaturas y el cmap
 
     if Analisis_de_Fourier==1:
@@ -1054,8 +1016,8 @@ else:
 
 #%% tau/SAR vs Temperatura or tau/SAR vs indx
 if templog:
-    # Definir el mapa de colores (jet en este caso)
-    cmap = mpl.colormaps['jet'] #'viridis'
+    # Definir el mapa de colores ('viridis' en este caso)
+    cmap = mpl.colormaps['viridis'] 
     # Normalizar las temperaturas al rango [0, 1] para obtener colores
     normalized_temperaturas = (np.array(temp_m) - np.array(temp_m).min()) / (np.array(temp_m).max() - np.array(temp_m).min())
     # Obtener los colores correspondientes a las temperaturas normalizadas
