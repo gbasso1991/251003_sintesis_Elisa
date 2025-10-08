@@ -288,7 +288,7 @@ def graficar_sar_vs_indice(ax, sar_arrays, categoria, color, idx):
                 label=f'{categoria} {i+1}', color=color)
     
     ax.set_title(f'{categoria} - SAR vs Índice', loc='left')
-    ax.set_xlabel('Índice')
+
     ax.set_ylabel('SAR (W/g)')
     ax.legend(loc='upper right', fontsize=9)
     ax.grid(True, linestyle='--', alpha=0.7)
@@ -299,7 +299,7 @@ def graficar_sar_vs_indice(ax, sar_arrays, categoria, color, idx):
     #     y_min = np.min(all_values) * 0.98
     #     y_max = np.max(all_values) * 1.02
     #     ax.set_ylim(y_min, y_max)
-
+axes[2].set_xlabel('Índice')
 
 # Graficar cada categoría en su propio subplot
 graficar_sar_vs_indice(axes[0], SAR_arrays_autoclave, 'Autoclave', 'tab:blue', 0)
@@ -309,9 +309,135 @@ graficar_sar_vs_indice(axes[2], SAR_arrays_NF, 'NF', 'tab:green', 2)
 plt.suptitle('Comparativa SAR vs Índice - Muestras C - 300 kHz - 57 kA/m', fontsize=14)
 plt.savefig('comparativa_SAR_Eli.png', dpi=300)
 plt.show()
+#%% Gráfico combinado: SAR vs índice + Ciclos de histéresis (ESTILOS HOMOGENEIZADOS)
+# Configurar estilos globales de matplotlib
+plt.rcParams.update({
+    'font.size': 12,
+    'axes.titlesize': 14,
+    'axes.labelsize': 12,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
+    'legend.fontsize': 10,
+    'figure.titlesize': 16
+})
 
+fig, axes = plt.subplots(nrows=3, ncols=2, figsize=(14, 11), constrained_layout=True, sharex='col')
+categorias = ['Autoclave', 'Balón', 'NF']
+colores = ['tab:blue', 'tab:red', 'tab:green']
+
+# Listas de ciclos por categoría (usando las que ya tienes cargadas)
+ciclos_por_categoria = {
+    'Autoclave': ciclos_autoclave,
+    'Balón': ciclos_balon,
+    'NF': ciclos_NF
+}
+
+# Función para graficar SAR vs índice (columna izquierda)
+def graficar_sar_vs_indice(ax, sar_arrays, categoria, color, idx):
+    for i, sar_array in enumerate(sar_arrays):
+        indices = np.arange(len(sar_array))
+        ax.plot(indices, sar_array, 'o-', alpha=0.7, linewidth=1, markersize=4,
+                label=f'{categoria} {i+1}', color=color)
+    
+    ax.set_title(f'{categoria} - SAR vs Índice', loc='left', fontweight='bold', fontsize=13)
+    ax.set_ylabel('SAR (W/g)', fontweight='bold')
+    ax.legend(loc='upper right', fontsize=10)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    
+    # Estilo de ticks
+    ax.tick_params(axis='both', which='major', labelsize=11)
+
+# Función para graficar ciclos de histéresis usando lector_ciclos (columna derecha)
+def graficar_ciclos_mejorado(ax, archivos_ciclos, categoria, color):
+    if not archivos_ciclos:
+        ax.text(0.5, 0.5, f'No hay ciclos\n{categoria}', 
+                transform=ax.transAxes, ha='center', va='center', fontsize=12, fontweight='bold')
+        return
+    
+    # Ordenar archivos para consistencia
+    archivos_ciclos.sort()
+    
+    for j, archivo in enumerate(archivos_ciclos):
+        try:
+            t, _, _, H_kAm, M_Am, metadata = lector_ciclos(archivo)
+            
+            # Usar el mismo color para todos los ciclos de esta categoría
+            # Etiqueta simple: Autoclave 1, Autoclave 2, etc.
+            etiqueta = f"{categoria} {j+1}"
+            
+            ax.plot(H_kAm/1000, M_Am, label=etiqueta, color=color, linewidth=2, alpha=0.8)
+
+        except Exception as e:
+            print(f"Error procesando archivo {archivo}: {str(e)}")
+            continue
+    
+    ax.set_title(f'{categoria} - Ciclos de Histéresis', loc='left', fontweight='bold', fontsize=13)
+    ax.set_xlabel('H (kA/m)', fontweight='bold')
+    ax.set_ylabel('M (A/m)', fontweight='bold')
+    ax.grid(True, linestyle='--', alpha=0.7)
+    ax.legend(loc='upper right', fontsize=10)
+    
+    # Estilo de ticks
+    ax.tick_params(axis='both', which='major', labelsize=11)
+    
+    # Ajustar aspecto para mejor visualización
+    ax.set_aspect('auto')
+
+# Graficar cada categoría en filas
+for i, categoria in enumerate(categorias):
+    # Columna izquierda: SAR vs índice
+    if categoria == 'Autoclave':
+        graficar_sar_vs_indice(axes[i, 0], SAR_arrays_autoclave, categoria, colores[i], i)
+    elif categoria == 'Balón':
+        graficar_sar_vs_indice(axes[i, 0], SAR_arrays_balon, categoria, colores[i], i)
+    elif categoria == 'NF':
+        graficar_sar_vs_indice(axes[i, 0], SAR_arrays_NF, categoria, colores[i], i)
+    
+    # Columna derecha: Ciclos de histéresis usando lector_ciclos
+    archivos_ciclos = ciclos_por_categoria[categoria]
+    graficar_ciclos_mejorado(axes[i, 1], archivos_ciclos, categoria, colores[i])
+
+# Configuración adicional para los ejes
+axes[2, 0].set_xlabel('Índice', fontweight='bold', fontsize=12)
+axes[2, 1].set_xlabel('H (kA/m)', fontweight='bold', fontsize=12)
+
+plt.suptitle('Análisis Completo: SAR vs Índice y Ciclos de Histéresis\nSintesis Elisa - 300 kHz - 57 kA/m', 
+             fontsize=16, fontweight='bold')
+plt.savefig('analisis_completo_SAR_ciclos.png', dpi=300, bbox_inches='tight')
+plt.show()
+
+# Restaurar configuración por defecto (opcional)
+plt.rcParams.update(plt.rcParamsDefault)
+#%% Corrección del gráfico simple de SAR (el que tenía error)
+fig, a = plt.subplots(nrows=1, figsize=(7, 5), constrained_layout=True)
+categories = ['Autoclave', 'Balon', 'NF']
+
+for i, (sarC, errC) in enumerate(zip([SAR_autoclave, SAR_balon, SAR_NF],
+                    [err_SAR_autoclave, err_SAR_balon, err_SAR_NF])):
+    x_pos = [i+1] * len(sarC)  # Posición X fija para cada categoría
+    a.errorbar(x_pos, sarC, yerr=errC, fmt='.', 
+                 label=categories[i], 
+                 capsize=5, linestyle='None')
+
+a.set_title('Muestras C - 300 kHz - 57 kA/m', loc='left')
+a.set_xlabel('Categorías')
+a.set_ylabel('SAR (W/g)')
+a.legend(ncol=2, loc='upper right')
+a.grid(True, axis='y', linestyle='--')
+plt.show()
+
+#% Información de los ciclos cargados
+print("Resumen de ciclos cargados:")
+print("=" * 50)
+for categoria in categorias:
+    archivos = ciclos_por_categoria[categoria]
+    print(f"{categoria}: {len(archivos)} archivos de ciclo")
+    for archivo in archivos:
+        nombre = os.path.basename(archivo)
+        print(f"  - {nombre}")
+print("=" * 50)
 #%% Opcional: Gráfico combinado en una sola figura para comparación directa
-fig2, ax2 = plt.subplots(figsize=(12, 6), constrained_layout=True,share)
+fig2, ax2 = plt.subplots(figsize=(8,4), constrained_layout=True)
 
 # Graficar todos juntos para comparación
 for i, (sar_arrays, categoria, color) in enumerate(zip(
@@ -323,14 +449,14 @@ for i, (sar_arrays, categoria, color) in enumerate(zip(
         indices = np.arange(len(sar_array))
         # Desplazar ligeramente los puntos para evitar superposición
         x_offset = i * 0.1
-        ax2.plot(indices + x_offset, sar_array, 'o', alpha=0.6, markersize=3,
+        ax2.plot(indices + x_offset, sar_array, 'o-', alpha=0.6, markersize=3,
                 label=f'{categoria} {j+1}' if j == 0 else "", color=color)
 
-ax2.set_title('Comparativa SAR vs Índice - Todas las muestras', loc='left')
+ax2.set_title('Comparativa SAR vs Índice - Todas las muestras\n300 kHz - 57 kA/m', loc='left')
 ax2.set_xlabel('Índice')
 ax2.set_ylabel('SAR (W/g)')
 ax2.legend(ncol=3, loc='upper right')
-ax2.grid(True, linestyle='--', alpha=0.7)
+ax2.grid()
 
 plt.show()
 
