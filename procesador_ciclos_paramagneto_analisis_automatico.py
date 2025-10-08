@@ -96,11 +96,12 @@ pendiente_HvsI = 3716.3 # 1/m
 ordenada_HvsI = 1297.0 # A/m
 # =============================================================================
 #Calibracion de la magnetizacion: cte que dimensionaliza a M en Vs --> A/m
-xi_patron_Dy2O3_v = 5.351e-3 #adimensional. Valor de VSM sobre capsula
+xi_patron_Dy2O3_v = 5.704e-3 #adimensional. Valor de VSM sobre capsula
 if N_espiras_bob_captora==5:
     pendiente_patron_Dy2O3 = ufloat(2.0861745031033012e-13,5.773563581411776e-14) #Vsm/A - (N=5 27 Nov 24)
 elif N_espiras_bob_captora==1:
-    pendiente_patron_Dy2O3 = ufloat(4.584443008514465e-14,4.441474310168033e-15) #Vsm/A - (N=1 30 Sept 24)
+    # pendiente_patron_Dy2O3 = ufloat(4.584443008514465e-14,4.441474310168033e-15) #Vsm/A - (N=1 30 Sept 24)
+    pendiente_patron_Dy2O3 = ufloat(8.7e-14,0.2e-14) #Vsm/A - (N=1 - 2 Oct 25)
 else:
     print('Especificar Num de espiras del par captor')
 
